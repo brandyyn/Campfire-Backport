@@ -163,9 +163,9 @@ public abstract class CustomInput<T> implements Comparable<CustomInput>
         {
             NBTTagCompound fluidData = getExtraData().getCompoundTag(StringParsers.KEY_Fluid);
             int fluidAmount = fluidData.getInteger(StringParsers.KEY_Amount);
-
-            FluidStack fluid = new FluidStack(FluidRegistry.getFluid(fluidData.getString(StringParsers.KEY_FluidName)), fluidAmount);
-            neiTooltipFillers.add((list) -> list.add(EnumChatFormatting.GOLD + StringParsers.translateNEI("fluid_data", fluidAmount, fluid.getLocalizedName())));
+            String fluidName = new FluidStack(FluidRegistry.getFluid(fluidData.getString(StringParsers.KEY_FluidName)), fluidAmount).getLocalizedName();
+            String key = fluidData.getBoolean(StringParsers.KEY_Drains) ? "fluid_data" : "fill_fluid_data";
+            neiTooltipFillers.add((list) -> list.add(EnumChatFormatting.GOLD + StringParsers.translateNEI(key, fluidAmount, fluidName)));
             break;
         }
         case 2:
@@ -245,8 +245,14 @@ public abstract class CustomInput<T> implements Comparable<CustomInput>
             }
             case 3:
             {
-                NBTTagCompound cinputFluidData = cinputData.getCompoundTag(StringParsers.KEY_Fluid);
-                return MiscUtil.containsFluid(stack, cinputFluidData.getString(StringParsers.KEY_FluidName), cinputFluidData.getInteger(StringParsers.KEY_Amount));
+                NBTTagCompound fluidData = cinputData.getCompoundTag(StringParsers.KEY_Fluid);
+                String fluidName = fluidData.getString(StringParsers.KEY_FluidName);
+                int fluidAmount = fluidData.getInteger(StringParsers.KEY_Amount);
+
+                if (fluidData.getBoolean(StringParsers.KEY_Drains))
+                    return MiscUtil.containsFluid(stack, fluidName, fluidAmount);
+                else
+                    return MiscUtil.couldContainFluid(stack, fluidName, fluidAmount);
             }
             case 4:
             {
@@ -322,7 +328,11 @@ public abstract class CustomInput<T> implements Comparable<CustomInput>
                 if (getDataType() == 1 || getDataType() == 2)
                     stack.setTagCompound(MiscUtil.mergeNBT(stack.getTagCompound(), getExtraData()));
                 else if (getDataType() == 3)
-                    stack = MiscUtil.fillContainerWithFluid(stack, FluidStack.loadFluidStackFromNBT(getExtraData().getCompoundTag(StringParsers.KEY_Fluid)));
+                {
+                    NBTTagCompound fluidData = getExtraData().getCompoundTag(StringParsers.KEY_Fluid);
+                    if (fluidData.getBoolean(StringParsers.KEY_Drains))
+                        stack = MiscUtil.fillContainerWithFluid(stack, FluidStack.loadFluidStackFromNBT(fluidData));
+                }
             }
         }
         return stack;
@@ -330,21 +340,19 @@ public abstract class CustomInput<T> implements Comparable<CustomInput>
 
     /**
      * If the stack is an IFluidContainerItem, drains the stack's fluid by the amount and returns it. <br>
-     * If the stack has a container item, reduces the stack's size by 1 and returns it. (It's assumed that container items will be taken care of elsewhere) <br>
      * If the stack is in the FluidContainerRegistry, reduces the stack's size by 1, then if the stack's size is now zero, returns the empty container. If not, gives the player the
      * empty container.
      */
-    public static ItemStack doFluidEmptying(ItemStack stack, int amount, EntityPlayer player)
+    public static ItemStack doFluidDraining(ItemStack stack, int amount, EntityPlayer player)
     {
+        // there are some items that are an IFluidContainerItem AND have a container item. 
+        // and we take care of stuff like buckets via the fluid container registry.
+        GenericRecipe.returnContainer = false;
+
         if (stack != null && player != null && amount > 0)
         {
             if (stack.getItem() instanceof IFluidContainerItem)
-            {
                 ((IFluidContainerItem) stack.getItem()).drain(stack, amount, true);
-                GenericRecipe.returnContainer = false; // there are some items that are an IFluidContainerItem AND have a container item.
-            }
-            else if (stack.getItem().hasContainerItem(stack))
-                stack.stackSize--;
             else
             {
                 ItemStack emptyContainer = FluidContainerRegistry.drainFluidContainer(stack);
@@ -368,7 +376,9 @@ public abstract class CustomInput<T> implements Comparable<CustomInput>
      */
     public static ItemStack doFluidFilling(ItemStack stack, FluidStack fluidStack, EntityPlayer player)
     {
-        GenericRecipe.returnContainer = false; // no returning a container here!
+        // see comment above
+        GenericRecipe.returnContainer = false;
+
         if (stack != null && player != null && fluidStack.amount > 0)
         {
             if (stack.getItem() instanceof IFluidContainerItem)

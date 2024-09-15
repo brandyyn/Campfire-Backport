@@ -8,6 +8,9 @@ import connor135246.campfirebackport.util.EnumCampfireType;
 import connor135246.campfirebackport.util.StringParsers;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraftforge.fluids.FluidRegistry;
+import net.minecraftforge.fluids.FluidStack;
 
 public abstract class GenericRecipe
 {
@@ -53,11 +56,21 @@ public abstract class GenericRecipe
             CustomInput cinput = getInputs()[cinputIndex];
 
             // yes we do apply crafttweaker transforms BEFORE running {@link #use(CustomInput, ItemStack, EntityPlayer)}.
-            // that's how {@link net.minecraft.inventory.SlotCrafing#onPickupFromSlot} does it.
+            // that's how {@link net.minecraft.inventory.SlotCrafting#onPickupFromSlot} does it.
             if (cinput instanceof CustomCraftTweakerIngredient)
                 stack = ((CustomCraftTweakerIngredient) cinput).getInput().applyTransform(stack, player);
             else if (cinput.hasExtraData() && cinput.getDataType() == 3)
-                stack = CustomInput.doFluidEmptying(stack, cinput.getExtraData().getCompoundTag(StringParsers.KEY_Fluid).getInteger(StringParsers.KEY_Amount), player);
+            {
+                NBTTagCompound fluidData = cinput.getExtraData().getCompoundTag(StringParsers.KEY_Fluid);
+                int fluidAmount = fluidData.getInteger(StringParsers.KEY_Amount);
+                if (fluidData.getBoolean(StringParsers.KEY_Drains))
+                    stack = CustomInput.doFluidDraining(stack, fluidAmount, player);
+                else
+                    stack = CustomInput.doFluidFilling(stack, new FluidStack(FluidRegistry.getFluid(fluidData.getString(StringParsers.KEY_FluidName)), fluidAmount), player);
+
+                // do a reuse, just like how {@link connor135246.campfirebackport.common.compat.crafttweaker.IngredientFunctions#addFunction} does it.
+                reuse(cinput, stack, player);
+            }
 
             if (stack != null)
             {
@@ -88,7 +101,7 @@ public abstract class GenericRecipe
             ItemStack containerStack = stack.getItem().getContainerItem(stack);
             if (containerStack != null)
             {
-                // it looks odd to copy the stack here, but ultimately this simulates how {@link net.minecraft.inventory.SlotCrafing#onPickupFromSlot} does it.
+                // it looks odd to copy the stack here, but ultimately this simulates how {@link net.minecraft.inventory.SlotCrafting#onPickupFromSlot} does it.
                 if (use(cinput, stack.copy(), player).stackSize <= 0)
                     return containerStack;
                 else if (!player.inventory.addItemStackToInventory(containerStack))
@@ -102,6 +115,16 @@ public abstract class GenericRecipe
      * The stack is used. Usually that means it should be reduced in stack size.
      */
     protected abstract ItemStack use(CustomInput cinput, ItemStack stack, EntityPlayer player);
+
+    /**
+     * Applies a reuse for when draining/filling fluids, to cancel out the stack being reduced in stack size later in {@link #use}. <br>
+     * If {@link #use} does something different, override this.
+     */
+    protected void reuse(CustomInput cinput, ItemStack stack, EntityPlayer player)
+    {
+        if (stack != null)
+            stack.stackSize++;
+    }
 
     /**
      * for {@link #toString()}
