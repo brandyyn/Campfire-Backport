@@ -102,6 +102,13 @@ public class EntityBigSmokeFX extends EntityFX
     @Override
     public void renderParticle(Tessellator tess, float partialTicks, float rotX, float rotXZ, float rotZ, float rotYZ, float rotXY)
     {
+        // Skip rendering fully transparent smoke to avoid redundant GL work
+        if (this.particleAlpha <= 0.0F)
+        {
+            this.setDead();
+            return;
+        }
+
         rotX = ActiveRenderInfo.rotationX;
         rotXZ = ActiveRenderInfo.rotationXZ;
         rotZ = ActiveRenderInfo.rotationZ;
@@ -169,6 +176,28 @@ public class EntityBigSmokeFX extends EntityFX
         this.prevPosX = this.posX;
         this.prevPosY = this.posY;
         this.prevPosZ = this.posZ;
+
+        // Cull distant campfire smoke to avoid ticking it forever outside of view range
+        EntityLivingBase viewer = Minecraft.getMinecraft().renderViewEntity;
+        if (viewer != null)
+        {
+            double dx = this.posX - viewer.posX;
+            double dy = this.posY - viewer.posY;
+            double dz = this.posZ - viewer.posZ;
+
+            int renderChunks = Minecraft.getMinecraft().gameSettings.renderDistanceChunks;
+            if (renderChunks > 0)
+            {
+                double maxRange = (double)(renderChunks * 16);
+                double maxDistSq = maxRange * maxRange;
+
+                if (dx * dx + dy * dy + dz * dz > maxDistSq)
+                {
+                    this.setDead();
+                    return;
+                }
+            }
+        }
 
         // sadly, this doesn't work on the dedicated server. it appears that advanced rocketry doesn't tell the client about localized atmosphere information! galacticraft seems to work, though.
         if (!this.atmosphericCombustion && this.localizedCombustion && this.particleAge % 10 == 0 && !CampfireBackportCompat.localizedCombustion(this.worldObj,
